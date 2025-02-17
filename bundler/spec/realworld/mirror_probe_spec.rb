@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../support/silent_logger"
-
-RSpec.describe "fetching dependencies with a not available mirror", :realworld => true do
+RSpec.describe "fetching dependencies with a not available mirror", realworld: true do
   let(:mirror) { @mirror_uri }
   let(:original) { @server_uri }
   let(:server_port) { @server_port }
@@ -32,7 +30,7 @@ RSpec.describe "fetching dependencies with a not available mirror", :realworld =
         gem 'weakling'
       G
 
-      bundle :install, :artifice => nil
+      bundle :install, artifice: nil
 
       expect(out).to include("Installing weakling")
       expect(out).to include("Bundle complete")
@@ -52,7 +50,7 @@ RSpec.describe "fetching dependencies with a not available mirror", :realworld =
         gem 'weakling'
       G
 
-      bundle :install, :artifice => nil
+      bundle :install, artifice: nil
 
       expect(out).to include("Installing weakling")
       expect(out).to include("Bundle complete")
@@ -71,7 +69,7 @@ RSpec.describe "fetching dependencies with a not available mirror", :realworld =
         gem 'weakling'
       G
 
-      bundle :install, :artifice => nil, :raise_on_error => false
+      bundle :install, artifice: nil, raise_on_error: false
 
       expect(out).to include("Fetching source index from #{mirror}")
 
@@ -94,7 +92,7 @@ RSpec.describe "fetching dependencies with a not available mirror", :realworld =
         gem 'weakling'
       G
 
-      bundle :install, :artifice => nil, :raise_on_error => false
+      bundle :install, artifice: nil, raise_on_error: false
 
       expect(out).to include("Fetching source index from #{mirror}")
 
@@ -111,14 +109,17 @@ RSpec.describe "fetching dependencies with a not available mirror", :realworld =
     @server_uri = "http://#{host}:#{@server_port}"
 
     require_relative "../support/artifice/endpoint"
+    require_relative "../support/silent_logger"
+
+    require "rackup/server"
 
     @server_thread = Thread.new do
-      Rack::Server.start(:app       => Endpoint,
-                         :Host      => host,
-                         :Port      => @server_port,
-                         :server    => "webrick",
-                         :AccessLog => [],
-                         :Logger    => Spec::SilentLogger.new)
+      Rackup::Server.start(app: Endpoint,
+                           Host: host,
+                           Port: @server_port,
+                           server: "webrick",
+                           AccessLog: [],
+                           Logger: Spec::SilentLogger.new)
     end.run
 
     wait_for_server(host, @server_port)

@@ -14,13 +14,15 @@ bundle-install(1) -- Install the dependencies specified in your Gemfile
                  [--no-cache]
                  [--no-prune]
                  [--path PATH]
+                 [--prefer-local]
                  [--quiet]
                  [--redownload]
                  [--retry=NUMBER]
-                 [--shebang]
+                 [--shebang=SHEBANG]
                  [--standalone[=GROUP[ GROUP...]]]
                  [--system]
-                 [--trust-policy=POLICY]
+                 [--trust-policy=TRUST-POLICY]
+                 [--target-rbconfig=TARGET-RBCONFIG]
                  [--with=GROUP[ GROUP...]]
                  [--without=GROUP[ GROUP...]]
 
@@ -50,18 +52,19 @@ automatically and that requires `bundler` to silently remember them. Since
 `bundler` will no longer remember CLI flags in future versions, `bundle config`
 (see bundle-config(1)) should be used to apply them permanently.
 
-* `--binstubs[=<directory>]`:
+* `--binstubs[=BINSTUBS]`:
   Binstubs are scripts that wrap around executables. Bundler creates a small Ruby
   file (a binstub) that loads Bundler, runs the command, and puts it in `bin/`.
   This lets you link the binstub inside of an application to the exact gem
   version the application needs.
 
-  Creates a directory (defaults to `~/bin`) and places any executables from the
-  gem there. These executables run in Bundler's context. If used, you might add
-  this directory to your environment's `PATH` variable. For instance, if the
-  `rails` gem comes with a `rails` executable, this flag will create a
-  `bin/rails` executable that ensures that all referred dependencies will be
-  resolved using the bundled gems.
+  Creates a directory (defaults to `~/bin` when the option is used without a
+  value, or to the given `<BINSTUBS>` directory otherwise) and places any
+  executables from the gem there. These executables run in Bundler's context. If
+  used, you might add this directory to your environment's `PATH` variable. For
+  instance, if the `rails` gem comes with a `rails` executable, this flag will
+  create a `bin/rails` executable that ensures that all referred dependencies
+  will be resolved using the bundled gems.
 
 * `--clean`:
   On finishing the installation Bundler is going to remove any gems not present
@@ -77,7 +80,7 @@ automatically and that requires `bundler` to silently remember them. Since
 
   This option is deprecated in favor of the `deployment` setting.
 
-* `--redownload`:
+* `--redownload`, `--force`:
   Force download every gem, even if the required versions are already available
   locally.
 
@@ -92,14 +95,14 @@ automatically and that requires `bundler` to silently remember them. Since
   a (currently big) index file of all gems. Performance can be improved for
   large bundles that seldom change by enabling this option.
 
-* `--gemfile=<gemfile>`:
+* `--gemfile=GEMFILE`:
   The location of the Gemfile(5) which Bundler should use. This defaults
   to a Gemfile(5) in the current working directory. In general, Bundler
   will assume that the location of the Gemfile(5) is also the project's
   root and will try to find `Gemfile.lock` and `vendor/cache` relative
   to this location.
 
-* `--jobs=[<number>]`, `-j[<number>]`:
+* `--jobs=<number>`, `-j=<number>`:
   The maximum number of parallel download and install jobs. The default is the
   number of available processors.
 
@@ -108,6 +111,12 @@ automatically and that requires `bundler` to silently remember them. Since
   gems already present in Rubygems' cache or in `vendor/cache`. Note that if an
   appropriate platform-specific gem exists on `rubygems.org` it will not be
   found.
+
+* `--prefer-local`:
+  Force using locally installed gems, or gems already present in Rubygems' cache
+  or in `vendor/cache`, when resolving, even if newer versions are available
+  remotely. Only attempt to connect to `rubygems.org` for gems that are not
+  present locally.
 
 * `--no-cache`:
   Do not update the cache in `vendor/cache` with the newly bundled gems. This
@@ -119,7 +128,7 @@ automatically and that requires `bundler` to silently remember them. Since
 
   This option is deprecated in favor of the `no_prune` setting.
 
-* `--path=<path>`:
+* `--path=PATH`:
   The location to install the specified gems to. This defaults to Rubygems'
   setting. Bundler shares this location with Rubygems, `gem install ...` will
   have gem installed there, too. Therefore, gems installed without a
@@ -129,13 +138,12 @@ automatically and that requires `bundler` to silently remember them. Since
   This option is deprecated in favor of the `path` setting.
 
 * `--quiet`:
-  Do not print progress information to the standard output. Instead, Bundler
-  will exit using a status code (`$?`).
+  Do not print progress information to the standard output.
 
 * `--retry=[<number>]`:
   Retry failed network or git requests for <number> times.
 
-* `--shebang=<ruby-executable>`:
+* `--shebang=SHEBANG`:
   Uses the specified ruby executable (usually `ruby`) to execute the scripts
   created with `--binstubs`. In addition, if you use `--binstubs` together with
   `--shebang jruby` these executables will be changed to execute `jruby`
@@ -145,7 +153,7 @@ automatically and that requires `bundler` to silently remember them. Since
 
 * `--standalone[=<list>]`:
   Makes a bundle that can work without depending on Rubygems or Bundler at
-  runtime. A space separated list of groups to install has to be specified.
+  runtime. A space separated list of groups to install can be specified.
   Bundler creates a directory named `bundle` and installs the bundle there. It
   also generates a `bundle/bundler/setup.rb` file to replace Bundler's own setup
   in the manner required. Using this option implicitly sets `path`, which is a
@@ -157,11 +165,14 @@ automatically and that requires `bundler` to silently remember them. Since
 
   This option is deprecated in favor of the `system` setting.
 
-* `--trust-policy=[<policy>]`:
+* `--trust-policy=TRUST-POLICY`:
   Apply the Rubygems security policy <policy>, where policy is one of
   `HighSecurity`, `MediumSecurity`, `LowSecurity`, `AlmostNoSecurity`, or
   `NoSecurity`. For more details, please see the Rubygems signing documentation
   linked below in [SEE ALSO][].
+
+* `--target-rbconfig=TARGET-RBCONFIG`:
+  Path to rbconfig.rb for the deployment target platform.
 
 * `--with=<list>`:
   A space-separated list of groups referencing gems to install. If an
@@ -217,35 +228,6 @@ will cause an error when the Gemfile(5) is modified.
    As a result, `bundle install --deployment` installs gems to
    the `vendor/bundle` directory in the application. This may be
    overridden using the `--path` option.
-
-## SUDO USAGE
-
-By default, Bundler installs gems to the same location as `gem install`.
-
-In some cases, that location may not be writable by your Unix user. In
-that case, Bundler will stage everything in a temporary directory,
-then ask you for your `sudo` password in order to copy the gems into
-their system location.
-
-From your perspective, this is identical to installing the gems
-directly into the system.
-
-You should never use `sudo bundle install`. This is because several
-other steps in `bundle install` must be performed as the current user:
-
-* Updating your `Gemfile.lock`
-* Updating your `vendor/cache`, if necessary
-* Checking out private git repositories using your user's SSH keys
-
-Of these three, the first two could theoretically be performed by
-`chown`ing the resulting files to `$SUDO_USER`. The third, however,
-can only be performed by invoking the `git` command as
-the current user. Therefore, git gems are downloaded and installed
-into `~/.bundle` rather than $GEM_HOME or $BUNDLE_PATH.
-
-As a result, you should run `bundle install` as the current user,
-and Bundler will ask for your password if it is needed to put the
-gems into their final location.
 
 ## INSTALLING GROUPS
 
@@ -401,5 +383,5 @@ does not work, run [bundle update(1)](bundle-update.1.html).
 
 ## SEE ALSO
 
-* [Gem install docs](http://guides.rubygems.org/rubygems-basics/#installing-gems)
-* [Rubygems signing docs](http://guides.rubygems.org/security/)
+* [Gem install docs](https://guides.rubygems.org/rubygems-basics/#installing-gems)
+* [Rubygems signing docs](https://guides.rubygems.org/security/)

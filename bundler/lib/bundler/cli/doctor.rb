@@ -2,12 +2,11 @@
 
 require "rbconfig"
 require "shellwords"
-require "fiddle"
 
 module Bundler
   class CLI::Doctor
-    DARWIN_REGEX = /\s+(.+) \(compatibility /.freeze
-    LDD_REGEX = /\t\S+ => (\S+) \(\S+\)/.freeze
+    DARWIN_REGEX = /\s+(.+) \(compatibility /
+    LDD_REGEX = /\t\S+ => (\S+) \(\S+\)/
 
     attr_reader :options
 
@@ -32,11 +31,11 @@ module Bundler
 
     def dylibs_ldd(path)
       output = `/usr/bin/ldd #{path.shellescape}`.chomp
-      output.split("\n").map do |l|
+      output.split("\n").filter_map do |l|
         match = l.match(LDD_REGEX)
         next if match.nil?
         match.captures[0]
-      end.compact
+      end
     end
 
     def dylibs(path)
@@ -57,6 +56,14 @@ module Bundler
       Dir.glob("#{spec.full_gem_path}/**/*.bundle")
     end
 
+    def lookup_with_fiddle(path)
+      require "fiddle"
+      Fiddle.dlopen(path)
+      false
+    rescue Fiddle::DLError
+      true
+    end
+
     def check!
       require_relative "check"
       Bundler::CLI::Check.new({}).run
@@ -73,12 +80,7 @@ module Bundler
       definition.specs.each do |spec|
         bundles_for_gem(spec).each do |bundle|
           bad_paths = dylibs(bundle).select do |f|
-            begin
-              Fiddle.dlopen(f)
-              false
-            rescue Fiddle::DLError
-              true
-            end
+            lookup_with_fiddle(f)
           end
           if bad_paths.any?
             broken_links[spec] ||= []
@@ -91,11 +93,11 @@ module Bundler
 
       if broken_links.any?
         message = "The following gems are missing OS dependencies:"
-        broken_links.map do |spec, paths|
+        broken_links.flat_map do |spec, paths|
           paths.uniq.map do |path|
             "\n * #{spec.name}: #{path}"
           end
-        end.flatten.sort.each {|m| message += m }
+        end.sort.each {|m| message += m }
         raise ProductionError, message
       elsif !permissions_valid
         Bundler.ui.info "No issues found with the installed bundle"

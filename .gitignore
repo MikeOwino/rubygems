@@ -1,12 +1,13 @@
 *.rbc
 *.swp
+.ruby-version
 .DS_Store
 /.idea
 /.rdoc
 /.rvmrc
 /.envrc
 /TAGS
-/doc
+/rdoc
 /misc
 /notes.txt
 /pkg

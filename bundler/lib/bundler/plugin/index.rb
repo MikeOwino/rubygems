@@ -34,6 +34,10 @@ module Bundler
         rescue GenericSystemCallError
           # no need to fail when on a read-only FS, for example
           nil
+        rescue ArgumentError => e
+          # ruby 3.4 checks writability in Dir.tmpdir
+          raise unless e.message&.include?("could not find a temporary directory")
+          nil
         end
         load_index(local_index_file) if SharedHelpers.in_bundle?
       end
@@ -136,6 +140,14 @@ module Bundler
         @hooks[event] || []
       end
 
+      # This plugin is installed inside the .bundle/plugin directory,
+      # and thus is managed solely by Bundler
+      def installed_in_plugin_root?(name)
+        return false unless (path = installed?(name))
+
+        path.start_with?("#{Plugin.root}/")
+      end
+
       private
 
       # Reads the index file from the directory and initializes the instance
@@ -146,7 +158,7 @@ module Bundler
       # @param [Boolean] is the index file global index
       def load_index(index_file, global = false)
         SharedHelpers.filesystem_access(index_file, :read) do |index_f|
-          valid_file = index_f && index_f.exist? && !index_f.size.zero?
+          valid_file = index_f&.exist? && !index_f.size.zero?
           break unless valid_file
 
           data = index_f.read
@@ -167,11 +179,11 @@ module Bundler
       # to be only String key value pairs)
       def save_index
         index = {
-          "commands"     => @commands,
-          "hooks"        => @hooks,
-          "load_paths"   => @load_paths,
+          "commands" => @commands,
+          "hooks" => @hooks,
+          "load_paths" => @load_paths,
           "plugin_paths" => @plugin_paths,
-          "sources"      => @sources,
+          "sources" => @sources,
         }
 
         require_relative "../yaml_serializer"

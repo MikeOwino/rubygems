@@ -82,7 +82,7 @@ module Bundler::URI
         if args.kind_of?(Array)
           return self.build(args.collect{|x|
             if x.is_a?(String)
-              DEFAULT_PARSER.escape(x)
+              Bundler::URI::RFC2396_PARSER.escape(x)
             else
               x
             end
@@ -91,7 +91,7 @@ module Bundler::URI
           tmp = {}
           args.each do |key, value|
             tmp[key] = if value
-                DEFAULT_PARSER.escape(value)
+                Bundler::URI::RFC2396_PARSER.escape(value)
               else
                 value
               end
@@ -393,7 +393,7 @@ module Bundler::URI
     def check_user(v)
       if @opaque
         raise InvalidURIError,
-          "can not set user with opaque"
+          "cannot set user with opaque"
       end
 
       return v unless v
@@ -417,7 +417,7 @@ module Bundler::URI
     def check_password(v, user = @user)
       if @opaque
         raise InvalidURIError,
-          "can not set password with opaque"
+          "cannot set password with opaque"
       end
       return v unless v
 
@@ -564,14 +564,24 @@ module Bundler::URI
       end
     end
 
-    # Returns the user component.
+    # Returns the user component (without Bundler::URI decoding).
     def user
       @user
     end
 
-    # Returns the password component.
+    # Returns the password component (without Bundler::URI decoding).
     def password
       @password
+    end
+
+    # Returns the user component after Bundler::URI decoding.
+    def decoded_user
+      Bundler::URI.decode_uri_component(@user) if @user
+    end
+
+    # Returns the password component after Bundler::URI decoding.
+    def decoded_password
+      Bundler::URI.decode_uri_component(@password) if @password
     end
 
     #
@@ -586,7 +596,7 @@ module Bundler::URI
 
       if @opaque
         raise InvalidURIError,
-          "can not set host with registry or opaque"
+          "cannot set host with registry or opaque"
       elsif parser.regexp[:HOST] !~ v
         raise InvalidComponentError,
           "bad component(expected host component): #{v}"
@@ -643,7 +653,7 @@ module Bundler::URI
     #
     def hostname
       v = self.host
-      /\A\[(.*)\]\z/ =~ v ? $1 : v
+      v&.start_with?('[') && v.end_with?(']') ? v[1..-2] : v
     end
 
     # Sets the host part of the Bundler::URI as the argument with brackets for IPv6 addresses.
@@ -659,7 +669,7 @@ module Bundler::URI
     # it is wrapped with brackets.
     #
     def hostname=(v)
-      v = "[#{v}]" if /\A\[.*\]\z/ !~ v && /:/ =~ v
+      v = "[#{v}]" if !(v&.start_with?('[') && v&.end_with?(']')) && v&.index(':')
       self.host = v
     end
 
@@ -675,7 +685,7 @@ module Bundler::URI
 
       if @opaque
         raise InvalidURIError,
-          "can not set port with registry or opaque"
+          "cannot set port with registry or opaque"
       elsif !v.kind_of?(Integer) && parser.regexp[:PORT] !~ v
         raise InvalidComponentError,
           "bad component(expected port component): #{v.inspect}"
@@ -723,17 +733,17 @@ module Bundler::URI
     end
 
     def check_registry(v) # :nodoc:
-      raise InvalidURIError, "can not set registry"
+      raise InvalidURIError, "cannot set registry"
     end
     private :check_registry
 
     def set_registry(v) #:nodoc:
-      raise InvalidURIError, "can not set registry"
+      raise InvalidURIError, "cannot set registry"
     end
     protected :set_registry
 
     def registry=(v)
-      raise InvalidURIError, "can not set registry"
+      raise InvalidURIError, "cannot set registry"
     end
 
     #
@@ -856,7 +866,7 @@ module Bundler::URI
       # hier_part     = ( net_path | abs_path ) [ "?" query ]
       if @host || @port || @user || @path  # userinfo = @user + ':' + @password
         raise InvalidURIError,
-          "can not set opaque with host, port, userinfo or path"
+          "cannot set opaque with host, port, userinfo or path"
       elsif v && parser.regexp[:OPAQUE] !~ v
         raise InvalidComponentError,
           "bad component(expected opaque component): #{v}"
@@ -935,7 +945,7 @@ module Bundler::URI
     # == Description
     #
     # Bundler::URI has components listed in order of decreasing significance from left to right,
-    # see RFC3986 https://tools.ietf.org/html/rfc3986 1.2.3.
+    # see RFC3986 https://www.rfc-editor.org/rfc/rfc3986 1.2.3.
     #
     # == Usage
     #
@@ -1225,7 +1235,7 @@ module Bundler::URI
         return rel, rel
       end
 
-      # you can modify `rel', but can not `oth'.
+      # you can modify `rel', but cannot `oth'.
       return oth, rel
     end
     private :route_from0
@@ -1250,7 +1260,7 @@ module Bundler::URI
     #   #=> #<Bundler::URI::Generic /main.rbx?page=1>
     #
     def route_from(oth)
-      # you can modify `rel', but can not `oth'.
+      # you can modify `rel', but cannot `oth'.
       begin
         oth, rel = route_from0(oth)
       rescue
@@ -1354,6 +1364,9 @@ module Bundler::URI
           str << ':'
           str << @port.to_s
         end
+        if (@host || @port) && !@path.empty? && !@path.start_with?('/')
+          str << '/'
+        end
         str << @path
         if @query
           str << '?'
@@ -1366,6 +1379,7 @@ module Bundler::URI
       end
       str
     end
+    alias to_str to_s
 
     #
     # Compares two URIs.
@@ -1387,19 +1401,6 @@ module Bundler::URI
       parser == oth.parser &&
       self.component_ary.eql?(oth.component_ary)
     end
-
-=begin
-
---- Bundler::URI::Generic#===(oth)
-
-=end
-#    def ===(oth)
-#      raise NotImplementedError
-#    end
-
-=begin
-=end
-
 
     # Returns an Array of the components defined from the COMPONENT Array.
     def component_ary
@@ -1514,9 +1515,19 @@ module Bundler::URI
           proxy_uri = env["CGI_#{name.upcase}"]
         end
       elsif name == 'http_proxy'
-        unless proxy_uri = env[name]
-          if proxy_uri = env[name.upcase]
-            warn 'The environment variable HTTP_PROXY is discouraged.  Use http_proxy.', uplevel: 1
+        if RUBY_ENGINE == 'jruby' && p_addr = ENV_JAVA['http.proxyHost']
+          p_port = ENV_JAVA['http.proxyPort']
+          if p_user = ENV_JAVA['http.proxyUser']
+            p_pass = ENV_JAVA['http.proxyPass']
+            proxy_uri = "http://#{p_user}:#{p_pass}@#{p_addr}:#{p_port}"
+          else
+            proxy_uri = "http://#{p_addr}:#{p_port}"
+          end
+        else
+          unless proxy_uri = env[name]
+            if proxy_uri = env[name.upcase]
+              warn 'The environment variable HTTP_PROXY is discouraged.  Use http_proxy.', uplevel: 1
+            end
           end
         end
       else

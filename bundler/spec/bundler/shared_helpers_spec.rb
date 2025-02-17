@@ -1,12 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe Bundler::SharedHelpers do
-  let(:ext_lock_double) { double(:ext_lock) }
-
   before do
     pwd_stub
-    allow(Bundler.rubygems).to receive(:ext_lock).and_return(ext_lock_double)
-    allow(ext_lock_double).to receive(:synchronize) {|&block| block.call }
   end
 
   let(:pwd_stub) { allow(subject).to receive(:pwd).and_return(bundled_app) }
@@ -242,7 +238,14 @@ RSpec.describe Bundler::SharedHelpers do
     shared_examples_for "ENV['RUBYOPT'] gets set correctly" do
       it "ensures -rbundler/setup is at the beginning of ENV['RUBYOPT']" do
         subject.set_bundle_environment
-        expect(ENV["RUBYOPT"].split(" ")).to start_with("-r#{source_lib_dir}/bundler/setup")
+        expect(ENV["RUBYOPT"].split(" ")).to start_with("-r#{install_path}/bundler/setup")
+      end
+    end
+
+    shared_examples_for "ENV['BUNDLER_SETUP'] gets set correctly" do
+      it "ensures bundler/setup is set in ENV['BUNDLER_SETUP']" do
+        subject.set_bundle_environment
+        expect(ENV["BUNDLER_SETUP"]).to eq("#{source_lib_dir}/bundler/setup")
       end
     end
 
@@ -255,8 +258,7 @@ RSpec.describe Bundler::SharedHelpers do
 
       it "ensures bundler's ruby version lib path is in ENV['RUBYLIB']" do
         subject.set_bundle_environment
-        paths = (ENV["RUBYLIB"]).split(File::PATH_SEPARATOR)
-        expect(paths).to include(ruby_lib_path)
+        expect(rubylib).to include(ruby_lib_path)
       end
     end
 
@@ -273,15 +275,14 @@ RSpec.describe Bundler::SharedHelpers do
 
       subject.set_bundle_environment
 
-      paths = (ENV["RUBYLIB"]).split(File::PATH_SEPARATOR)
-      expect(paths.count(RbConfig::CONFIG["rubylibdir"])).to eq(0)
+      expect(rubylib.count(RbConfig::CONFIG["rubylibdir"])).to eq(0)
     end
 
     it "exits if bundle path contains the unix-like path separator" do
       if Gem.respond_to?(:path_separator)
         allow(Gem).to receive(:path_separator).and_return(":")
       else
-        stub_const("File::PATH_SEPARATOR", ":".freeze)
+        stub_const("File::PATH_SEPARATOR", ":")
       end
       allow(Bundler).to receive(:bundle_path) { Pathname.new("so:me/dir/bin") }
       expect { subject.send(:validate_bundle_path) }.to raise_error(
@@ -358,20 +359,41 @@ RSpec.describe Bundler::SharedHelpers do
       end
     end
 
-    context "ENV['RUBYOPT'] does not exist" do
-      before { ENV.delete("RUBYOPT") }
+    context "when bundler install path is standard" do
+      let(:install_path) { source_lib_dir }
 
-      it_behaves_like "ENV['RUBYOPT'] gets set correctly"
+      context "ENV['RUBYOPT'] does not exist" do
+        before { ENV.delete("RUBYOPT") }
+
+        it_behaves_like "ENV['RUBYOPT'] gets set correctly"
+      end
+
+      context "ENV['RUBYOPT'] exists without -rbundler/setup" do
+        before { ENV["RUBYOPT"] = "-I/some_app_path/lib" }
+
+        it_behaves_like "ENV['RUBYOPT'] gets set correctly"
+      end
+
+      context "ENV['RUBYOPT'] exists and contains -rbundler/setup" do
+        before { ENV["RUBYOPT"] = "-rbundler/setup" }
+
+        it_behaves_like "ENV['RUBYOPT'] gets set correctly"
+      end
     end
 
-    context "ENV['RUBYOPT'] exists without -rbundler/setup" do
-      before { ENV["RUBYOPT"] = "-I/some_app_path/lib" }
+    context "when bundler install path contains special characters" do
+      let(:install_path) { "/opt/ruby3.3.0-preview2/lib/ruby/3.3.0+0" }
 
-      it_behaves_like "ENV['RUBYOPT'] gets set correctly"
-    end
+      before do
+        ENV["RUBYOPT"] = "-r#{install_path}/bundler/setup"
+        allow(File).to receive(:expand_path).and_return("#{install_path}/bundler/setup")
+        allow(Gem).to  receive(:bin_path).and_return("#{install_path}/bundler/setup")
+      end
 
-    context "ENV['RUBYOPT'] exists and contains -rbundler/setup" do
-      before { ENV["RUBYOPT"] = "-rbundler/setup" }
+      it "ensures -rbundler/setup is not duplicated" do
+        subject.set_bundle_environment
+        expect(ENV["RUBYOPT"].split(" ").grep(%r{-r.*/bundler/setup}).length).to eq(1)
+      end
 
       it_behaves_like "ENV['RUBYOPT'] gets set correctly"
     end
@@ -417,8 +439,7 @@ RSpec.describe Bundler::SharedHelpers do
 
       it "ENV['RUBYLIB'] should only contain one instance of bundler's ruby version lib path" do
         subject.set_bundle_environment
-        paths = (ENV["RUBYLIB"]).split(File::PATH_SEPARATOR)
-        expect(paths.count(ruby_lib_path)).to eq(1)
+        expect(rubylib.count(ruby_lib_path)).to eq(1)
       end
     end
   end
@@ -434,7 +455,7 @@ RSpec.describe Bundler::SharedHelpers do
     end
 
     context "system throws Errno::EACESS" do
-      let(:file_op_block) { proc {|_path| raise Errno::EACCES } }
+      let(:file_op_block) { proc {|_path| raise Errno::EACCES.new("/path") } }
 
       it "raises a PermissionError" do
         expect { subject.filesystem_access("/path", &file_op_block) }.to raise_error(
@@ -489,9 +510,39 @@ RSpec.describe Bundler::SharedHelpers do
 
       it "raises a GenericSystemCallError" do
         expect { subject.filesystem_access("/path", &file_op_block) }.to raise_error(
-          Bundler::GenericSystemCallError, /error accessing.+underlying.+Shields down/m
+          Bundler::GenericSystemCallError, /error creating.+underlying.+Shields down/m
         )
       end
+    end
+  end
+
+  describe "#major_deprecation" do
+    before { allow(Bundler).to receive(:bundler_major_version).and_return(37) }
+    before { allow(Bundler.ui).to receive(:warn) }
+
+    it "prints and raises nothing below the deprecated major version" do
+      subject.major_deprecation(38, "Message")
+      subject.major_deprecation(39, "Message", removed_message: "Removal", print_caller_location: true)
+      expect(Bundler.ui).not_to have_received(:warn)
+    end
+
+    it "prints but does not raise _at_ the deprecated major version" do
+      subject.major_deprecation(37, "Message")
+      subject.major_deprecation(37, "Message", removed_message: "Removal")
+      expect(Bundler.ui).to have_received(:warn).with("[DEPRECATED] Message").twice
+
+      subject.major_deprecation(37, "Message", print_caller_location: true)
+      expect(Bundler.ui).to have_received(:warn).
+        with(a_string_matching(/^\[DEPRECATED\] Message \(called at .*:\d+\)$/))
+    end
+
+    it "raises the appropriate errors when _past_ the deprecated major version" do
+      expect { subject.major_deprecation(36, "Message") }.
+        to raise_error(Bundler::DeprecatedError, "[REMOVED] Message")
+      expect { subject.major_deprecation(36, "Message", removed_message: "Removal") }.
+        to raise_error(Bundler::DeprecatedError, "[REMOVED] Removal")
+      expect { subject.major_deprecation(35, "Message", removed_message: "Removal", print_caller_location: true) }.
+        to raise_error(Bundler::DeprecatedError, /^\[REMOVED\] Removal \(called at .*:\d+\)$/)
     end
   end
 end

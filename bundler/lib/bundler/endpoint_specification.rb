@@ -3,36 +3,40 @@
 module Bundler
   # used for Creating Specifications from the Gemcutter Endpoint
   class EndpointSpecification < Gem::Specification
-    include MatchPlatform
+    include MatchRemoteMetadata
 
     attr_reader :name, :version, :platform, :checksum
-    attr_accessor :source, :remote, :dependencies
+    attr_writer :dependencies
+    attr_accessor :remote, :locked_platform
 
     def initialize(name, version, platform, spec_fetcher, dependencies, metadata = nil)
       super()
       @name         = name
       @version      = Gem::Version.create version
-      @platform     = platform
+      @platform     = Gem::Platform.new(platform)
       @spec_fetcher = spec_fetcher
-      @dependencies = dependencies.map {|dep, reqs| build_dependency(dep, reqs) }
+      @dependencies = nil
+      @unbuilt_dependencies = dependencies
 
       @loaded_from          = nil
       @remote_specification = nil
+      @locked_platform = nil
 
       parse_metadata(metadata)
     end
 
-    def required_ruby_version
-      @required_ruby_version ||= _remote_specification.required_ruby_version
-    end
-
-    def required_rubygems_version
-      @required_rubygems_version ||= _remote_specification.required_rubygems_version
+    def insecurely_materialized?
+      @locked_platform.to_s != @platform.to_s
     end
 
     def fetch_platform
       @platform
     end
+
+    def dependencies
+      @dependencies ||= @unbuilt_dependencies.map! {|dep, reqs| build_dependency(dep, reqs) }
+    end
+    alias_method :runtime_dependencies, :dependencies
 
     # needed for standalone, load required_paths from local gemspec
     # after the gem is installed
@@ -100,9 +104,20 @@ module Bundler
       end
     end
 
+    # needed for `bundle fund`
+    def metadata
+      if @remote_specification
+        @remote_specification.metadata
+      elsif _local_specification
+        _local_specification.metadata
+      else
+        super
+      end
+    end
+
     def _local_specification
       return unless @loaded_from && File.exist?(local_specification_path)
-      eval(File.read(local_specification_path)).tap do |spec|
+      eval(File.read(local_specification_path), nil, local_specification_path).tap do |spec|
         spec.loaded_from = @loaded_from
       end
     end
@@ -110,6 +125,10 @@ module Bundler
     def __swap__(spec)
       SharedHelpers.ensure_same_dependencies(self, dependencies, spec.dependencies)
       @remote_specification = spec
+    end
+
+    def inspect
+      "#<#{self.class} @name=\"#{name}\" (#{full_name.delete_prefix("#{name}-")})>"
     end
 
     private
@@ -133,7 +152,11 @@ module Bundler
         next unless v
         case k.to_s
         when "checksum"
-          @checksum = v.last
+          begin
+            @checksum = Checksum.from_api(v.last, @spec_fetcher.uri)
+          rescue ArgumentError => e
+            raise ArgumentError, "Invalid checksum for #{full_name}: #{e.message}"
+          end
         when "rubygems"
           @required_rubygems_version = Gem::Requirement.new(v)
         when "ruby"
@@ -145,7 +168,7 @@ module Bundler
     end
 
     def build_dependency(name, requirements)
-      Gem::Dependency.new(name, requirements)
+      Dependency.new(name, requirements)
     end
   end
 end

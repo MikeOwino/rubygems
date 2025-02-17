@@ -10,7 +10,7 @@ module Bundler
     end
 
     def setup(*groups)
-      @definition.ensure_equivalent_gemfile_and_lockfile if Bundler.frozen_bundle?
+      @definition.ensure_equivalent_gemfile_and_lockfile
 
       # Has to happen first
       clean_load_path
@@ -28,11 +28,11 @@ module Bundler
         spec.load_paths.reject {|path| $LOAD_PATH.include?(path) }
       end.reverse.flatten
 
-      Bundler.rubygems.add_to_load_path(load_paths)
+      Gem.add_to_load_path(*load_paths)
 
       setup_manpath
 
-      lock(:preserve_unknown_sections => true)
+      lock(preserve_unknown_sections: true)
 
       self
     end
@@ -41,42 +41,48 @@ module Bundler
       groups.map!(&:to_sym)
       groups = [:default] if groups.empty?
 
-      @definition.dependencies.each do |dep|
-        # Skip the dependency if it is not in any of the requested groups, or
-        # not for the current platform, or doesn't match the gem constraints.
-        next unless (dep.groups & groups).any? && dep.should_include?
+      dependencies = @definition.dependencies.select do |dep|
+        # Select the dependency if it is in any of the requested groups, and
+        # for the current platform, and matches the gem constraints.
+        (dep.groups & groups).any? && dep.should_include?
+      end
 
-        required_file = nil
+      Plugin.hook(Plugin::Events::GEM_BEFORE_REQUIRE_ALL, dependencies)
 
-        begin
-          # Loop through all the specified autorequires for the
-          # dependency. If there are none, use the dependency's name
-          # as the autorequire.
-          Array(dep.autorequire || dep.name).each do |file|
-            # Allow `require: true` as an alias for `require: <name>`
-            file = dep.name if file == true
-            required_file = file
-            begin
-              Kernel.require file
-            rescue RuntimeError => e
-              raise e if e.is_a?(LoadError) # we handle this a little later
+      dependencies.each do |dep|
+        Plugin.hook(Plugin::Events::GEM_BEFORE_REQUIRE, dep)
+
+        # Loop through all the specified autorequires for the
+        # dependency. If there are none, use the dependency's name
+        # as the autorequire.
+        Array(dep.autorequire || dep.name).each do |file|
+          # Allow `require: true` as an alias for `require: <name>`
+          file = dep.name if file == true
+          required_file = file
+          begin
+            Kernel.require required_file
+          rescue LoadError => e
+            if dep.autorequire.nil? && e.path == required_file
+              if required_file.include?("-")
+                required_file = required_file.tr("-", "/")
+                retry
+              end
+            else
               raise Bundler::GemRequireError.new e,
                 "There was an error while trying to load the gem '#{file}'."
             end
-          end
-        rescue LoadError => e
-          raise if dep.autorequire || e.path != required_file
-
-          if dep.autorequire.nil? && dep.name.include?("-")
-            begin
-              namespaced_file = dep.name.tr("-", "/")
-              Kernel.require namespaced_file
-            rescue LoadError => e
-              raise if e.path != namespaced_file
-            end
+          rescue RuntimeError => e
+            raise Bundler::GemRequireError.new e,
+              "There was an error while trying to load the gem '#{file}'."
           end
         end
+
+        Plugin.hook(Plugin::Events::GEM_AFTER_REQUIRE, dep)
       end
+
+      Plugin.hook(Plugin::Events::GEM_AFTER_REQUIRE_ALL, dependencies)
+
+      dependencies
     end
 
     def self.definition_method(meth)
@@ -94,8 +100,8 @@ module Bundler
     definition_method :requires
 
     def lock(opts = {})
-      return if @definition.nothing_changed? && !@definition.unlocking?
-      @definition.lock(Bundler.default_lockfile, opts[:preserve_unknown_sections])
+      return if @definition.no_resolve_needed?
+      @definition.lock(opts[:preserve_unknown_sections])
     end
 
     alias_method :gems, :specs
@@ -125,8 +131,11 @@ module Bundler
       specs_to_cache.each do |spec|
         next if spec.name == "bundler"
         next if spec.source.is_a?(Source::Gemspec)
-        spec.source.send(:fetch_gem, spec) if Bundler.settings[:cache_all_platforms] && spec.source.respond_to?(:fetch_gem, true)
-        spec.source.cache(spec, custom_path) if spec.source.respond_to?(:cache)
+        if spec.source.respond_to?(:migrate_cache)
+          spec.source.migrate_cache(custom_path, local: local)
+        elsif spec.source.respond_to?(:cache)
+          spec.source.cache(spec, custom_path)
+        end
       end
 
       Dir[cache_path.join("*/.git")].each do |git_dir|
@@ -258,10 +267,10 @@ module Bundler
 
     def setup_manpath
       # Add man/ subdirectories from activated bundles to MANPATH for man(1)
-      manuals = $LOAD_PATH.map do |path|
+      manuals = $LOAD_PATH.filter_map do |path|
         man_subdir = path.sub(/lib$/, "man")
         man_subdir unless Dir[man_subdir + "/man?/"].empty?
-      end.compact
+      end
 
       return if manuals.empty?
       Bundler::SharedHelpers.set_env "MANPATH", manuals.concat(
@@ -301,11 +310,7 @@ module Bundler
       e = Gem::LoadError.new "You have already activated #{activated_spec.name} #{activated_spec.version}, " \
                              "but your Gemfile requires #{spec.name} #{spec.version}. #{suggestion}"
       e.name = spec.name
-      if e.respond_to?(:requirement=)
-        e.requirement = Gem::Requirement.new(spec.version.to_s)
-      else
-        e.version_requirement = Gem::Requirement.new(spec.version.to_s)
-      end
+      e.requirement = Gem::Requirement.new(spec.version.to_s)
       raise e
     end
   end
