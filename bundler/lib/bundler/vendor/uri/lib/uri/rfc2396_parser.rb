@@ -116,7 +116,7 @@ module Bundler::URI
     # See also Bundler::URI::Parser.initialize_regexp.
     attr_reader :regexp
 
-    # Returns a split Bundler::URI against regexp[:ABS_URI].
+    # Returns a split Bundler::URI against +regexp[:ABS_URI]+.
     def split(uri)
       case uri
       when ''
@@ -140,11 +140,11 @@ module Bundler::URI
 
         if !scheme
           raise InvalidURIError,
-            "bad Bundler::URI(absolute but no scheme): #{uri}"
+            "bad Bundler::URI (absolute but no scheme): #{uri}"
         end
         if !opaque && (!path && (!host && !registry))
           raise InvalidURIError,
-            "bad Bundler::URI(absolute but no path): #{uri}"
+            "bad Bundler::URI (absolute but no path): #{uri}"
         end
 
       when @regexp[:REL_URI]
@@ -173,7 +173,7 @@ module Bundler::URI
         # server        = [ [ userinfo "@" ] hostport ]
 
       else
-        raise InvalidURIError, "bad Bundler::URI(is not Bundler::URI?): #{uri}"
+        raise InvalidURIError, "bad Bundler::URI (is not Bundler::URI?): #{uri}"
       end
 
       path = '' if !path && !opaque # (see RFC2396 Section 5.2)
@@ -257,8 +257,8 @@ module Bundler::URI
       end
     end
 
-    # Returns Regexp that is default self.regexp[:ABS_URI_REF],
-    # unless +schemes+ is provided. Then it is a Regexp.union with self.pattern[:X_ABS_URI].
+    # Returns Regexp that is default +self.regexp[:ABS_URI_REF]+,
+    # unless +schemes+ is provided. Then it is a Regexp.union with +self.pattern[:X_ABS_URI]+.
     def make_regexp(schemes = nil)
       unless schemes
         @regexp[:ABS_URI_REF]
@@ -277,7 +277,7 @@ module Bundler::URI
     # +str+::
     #    String to make safe
     # +unsafe+::
-    #    Regexp to apply. Defaults to self.regexp[:UNSAFE]
+    #    Regexp to apply. Defaults to +self.regexp[:UNSAFE]+
     #
     # == Description
     #
@@ -309,7 +309,7 @@ module Bundler::URI
     # +str+::
     #    String to remove escapes from
     # +escaped+::
-    #    Regexp to apply. Defaults to self.regexp[:ESCAPED]
+    #    Regexp to apply. Defaults to +self.regexp[:ESCAPED]+
     #
     # == Description
     #
@@ -322,8 +322,14 @@ module Bundler::URI
     end
 
     @@to_s = Kernel.instance_method(:to_s)
-    def inspect
-      @@to_s.bind_call(self)
+    if @@to_s.respond_to?(:bind_call)
+      def inspect
+        @@to_s.bind_call(self)
+      end
+    else
+      def inspect
+        @@to_s.bind(self).call
+      end
     end
 
     private
@@ -491,8 +497,8 @@ module Bundler::URI
       ret = {}
 
       # for Bundler::URI::split
-      ret[:ABS_URI] = Regexp.new('\A\s*' + pattern[:X_ABS_URI] + '\s*\z', Regexp::EXTENDED)
-      ret[:REL_URI] = Regexp.new('\A\s*' + pattern[:X_REL_URI] + '\s*\z', Regexp::EXTENDED)
+      ret[:ABS_URI] = Regexp.new('\A\s*+' + pattern[:X_ABS_URI] + '\s*\z', Regexp::EXTENDED)
+      ret[:REL_URI] = Regexp.new('\A\s*+' + pattern[:X_REL_URI] + '\s*\z', Regexp::EXTENDED)
 
       # for Bundler::URI::extract
       ret[:URI_REF]     = Regexp.new(pattern[:URI_REF])
@@ -530,4 +536,11 @@ module Bundler::URI
     end
 
   end # class Parser
+
+  # Backward compatibility for Bundler::URI::REGEXP::PATTERN::*
+  RFC2396_Parser.new.pattern.each_pair do |sym, str|
+    unless RFC2396_REGEXP::PATTERN.const_defined?(sym, false)
+      RFC2396_REGEXP::PATTERN.const_set(sym, str)
+    end
+  end
 end # module Bundler::URI

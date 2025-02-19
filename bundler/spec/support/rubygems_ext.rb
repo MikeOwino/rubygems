@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+abort "RubyGems only supports Ruby 3.1 or higher" if RUBY_VERSION < "3.1.0"
+
 require_relative "path"
 
 $LOAD_PATH.unshift(Spec::Path.source_lib_dir.to_s)
@@ -18,9 +20,15 @@ module Spec
       gem_load_and_activate(gem_name, bin_container)
     end
 
-    def gem_require(gem_name)
+    def gem_load_and_possibly_install(gem_name, bin_container)
+      require_relative "switch_rubygems"
+
+      gem_load_activate_and_possibly_install(gem_name, bin_container)
+    end
+
+    def gem_require(gem_name, entrypoint)
       gem_activate(gem_name)
-      require gem_name
+      require entrypoint
     end
 
     def test_setup
@@ -32,6 +40,10 @@ module Spec
       FileUtils.mkdir_p(Path.tmpdir)
 
       ENV["HOME"] = Path.home.to_s
+      # Remove "RUBY_CODESIGN", which is used by mkmf-generated Makefile to
+      # sign extension bundles on macOS, to avoid trying to find the specified key
+      # from the fake $HOME/Library/Keychains directory.
+      ENV.delete "RUBY_CODESIGN"
       ENV["TMPDIR"] = Path.tmpdir.to_s
 
       require "rubygems/user_interaction"
@@ -47,8 +59,8 @@ module Spec
       install_test_deps
 
       (2..Parallel.processor_count).each do |n|
-        source = Path.source_root.join("tmp", "1")
-        destination = Path.source_root.join("tmp", n.to_s)
+        source = Path.tmp_root("1")
+        destination = Path.tmp_root(n.to_s)
 
         FileUtils.rm_rf destination
         FileUtils.cp_r source, destination
@@ -60,14 +72,20 @@ module Spec
 
       ENV["BUNDLE_PATH"] = nil
       ENV["GEM_HOME"] = ENV["GEM_PATH"] = Path.base_system_gem_path.to_s
-      ENV["PATH"] = [Path.system_gem_path.join("bin"), ENV["PATH"]].join(File::PATH_SEPARATOR)
+      ENV["PATH"] = [Path.system_gem_path("bin"), ENV["PATH"]].join(File::PATH_SEPARATOR)
       ENV["PATH"] = [Path.bindir, ENV["PATH"]].join(File::PATH_SEPARATOR) if Path.ruby_core?
     end
 
     def install_test_deps
+      Gem.clear_paths
+
       install_gems(test_gemfile, Path.base_system_gems.to_s)
       install_gems(rubocop_gemfile, Path.rubocop_gems.to_s)
       install_gems(standard_gemfile, Path.standard_gems.to_s)
+
+      # For some reason, doing this here crashes on JRuby + Windows. So defer to
+      # when the test suite is running in that case.
+      Helpers.install_dev_bundler unless Gem.win_platform? && RUBY_ENGINE == "jruby"
     end
 
     def check_source_control_changes(success_message:, error_message:)
@@ -80,7 +98,7 @@ module Spec
         puts success_message
         puts
       else
-        system("git status --porcelain")
+        system("git diff")
 
         puts
         puts error_message
@@ -99,9 +117,22 @@ module Spec
       abort "We couldn't activate #{gem_name} (#{e.requirement}). Run `gem install #{gem_name}:'#{e.requirement}'`"
     end
 
+    def gem_load_activate_and_possibly_install(gem_name, bin_container)
+      gem_activate_and_possibly_install(gem_name)
+      load Gem.bin_path(gem_name, bin_container)
+    end
+
+    def gem_activate_and_possibly_install(gem_name)
+      gem_activate(gem_name)
+    rescue Gem::LoadError => e
+      Gem.install(gem_name, e.requirement)
+      retry
+    end
+
     def gem_activate(gem_name)
+      require_relative "activate"
       require "bundler"
-      gem_requirement = Bundler::LockfileParser.new(File.read(dev_lockfile)).dependencies[gem_name]&.requirement
+      gem_requirement = Bundler::LockfileParser.new(File.read(dev_lockfile)).specs.find {|spec| spec.name == gem_name }.version
       gem gem_name, gem_requirement
     end
 
@@ -119,8 +150,9 @@ module Spec
         ENV["BUNDLE_PATH__SYSTEM"] = "true"
       end
 
-      output = `#{Gem.ruby} #{File.expand_path("support/bundle.rb", Path.spec_dir)} install --verbose`
-      raise "Error when installing gems in #{gemfile}: #{output}" unless $?.success?
+      # We don't use `Open3` here because it does not work on JRuby + Windows
+      output = `#{Gem.ruby} #{File.expand_path("support/bundle.rb", Path.spec_dir)} install`
+      raise output unless $?.success?
     ensure
       if path
         ENV["BUNDLE_PATH"] = old_path

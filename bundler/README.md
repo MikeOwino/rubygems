@@ -1,5 +1,4 @@
 [![Version ](https://img.shields.io/gem/v/bundler.svg?style=flat)](https://rubygems.org/gems/bundler)
-[![Slack   ](https://bundler-slackin.herokuapp.com/badge.svg)](https://bundler-slackin.herokuapp.com)
 
 # Bundler: a gem to bundle gems
 
@@ -30,7 +29,7 @@ See [bundler.io](https://bundler.io) for the full documentation.
 
 ### Troubleshooting
 
-For help with common problems, see [TROUBLESHOOTING](doc/TROUBLESHOOTING.md).
+For help with common problems, see [TROUBLESHOOTING](../doc/bundler/TROUBLESHOOTING.md).
 
 Still stuck? Try [filing an issue](https://github.com/rubygems/rubygems/issues/new?labels=Bundler&template=bundler-related-issue.md).
 
@@ -38,20 +37,17 @@ Still stuck? Try [filing an issue](https://github.com/rubygems/rubygems/issues/n
 
 To see what has changed in recent versions of Bundler, see the [CHANGELOG](CHANGELOG.md).
 
-To get in touch with the Bundler core team and other Bundler users, please see [getting help](doc/contributing/GETTING_HELP.md).
+To get in touch with the Bundler core team and other Bundler users, please join [the Bundler slack](https://join.slack.com/t/bundler/shared_invite/zt-1rrsuuv3m-OmXKWQf8K6iSla4~F1DBjQ).
 
 ### Contributing
 
-If you'd like to contribute to Bundler, that's awesome, and we <3 you. We've put together [the Bundler contributor guide](https://github.com/rubygems/rubygems/blob/master/bundler/doc/contributing/README.md) with all of the information you need to get started.
+If you'd like to contribute to Bundler, that's awesome, and we <3 you. We've put together [the Bundler contributor guide](https://github.com/rubygems/rubygems/blob/master/doc/bundler/contributing/README.md) with all of the information you need to get started.
 
-If you'd like to request a substantial change to Bundler or its documentation, refer to the [Bundler RFC process](https://github.com/bundler/rfcs) for more information.
-
-While some Bundler contributors are compensated by Ruby Together, the project maintainers make decisions independent of Ruby Together. As a project, we welcome contributions regardless of the author's affiliation with Ruby Together.
+If you'd like to request a substantial change to Bundler or its documentation, refer to the [Bundler RFC process](https://github.com/rubygems/rfcs) for more information.
 
 ### Supporting
 
-<a href="https://rubytogether.org/"><img src="https://rubytogether.org/images/rubies.svg" width="150"></a><br>
-<a href="https://rubytogether.org/">Ruby Together</a> pays some Bundler maintainers for their ongoing work. As a grassroots initiative committed to supporting the critical Ruby infrastructure you rely on, Ruby Together is funded entirely by the Ruby community. Contribute today <a href="https://rubytogether.org/developers">as an individual</a> or (better yet) <a href="https://rubytogether.org/companies">as a company</a> to ensure that Bundler, RubyGems, and other shared tooling is around for years to come.
+RubyGems is managed by [Ruby Central](https://rubycentral.org), a non-profit organization that supports the Ruby community through projects like this one, as well as [RubyConf](https://rubyconf.org), [RailsConf](https://railsconf.org), and [RubyGems.org](https://rubygems.org). You can support Ruby Central by attending or [sponsoring](sponsors@rubycentral.org) a conference, or by [joining as a supporting member](https://rubycentral.org/#/portal/signup).
 
 ### Code of Conduct
 

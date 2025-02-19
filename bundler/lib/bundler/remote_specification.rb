@@ -6,19 +6,26 @@ module Bundler
   # be seeded with what we're given from the source's abbreviated index - the
   # full specification will only be fetched when necessary.
   class RemoteSpecification
+    include MatchRemoteMetadata
     include MatchPlatform
     include Comparable
 
     attr_reader :name, :version, :platform
     attr_writer :dependencies
-    attr_accessor :source, :remote
+    attr_accessor :source, :remote, :locked_platform
 
     def initialize(name, version, platform, spec_fetcher)
       @name         = name
       @version      = Gem::Version.create version
-      @platform     = platform
+      @original_platform = platform || Gem::Platform::RUBY
+      @platform     = Gem::Platform.new(platform)
       @spec_fetcher = spec_fetcher
       @dependencies = nil
+      @locked_platform = nil
+    end
+
+    def insecurely_materialized?
+      @locked_platform.to_s != @platform.to_s
     end
 
     # Needed before installs, since the arch matters then and quick
@@ -27,18 +34,11 @@ module Bundler
       @platform = _remote_specification.platform
     end
 
-    # A fallback is included because the original version of the specification
-    # API didn't include that field, so some marshalled specs in the index have it
-    # set to +nil+.
-    def required_rubygems_version
-      @required_rubygems_version ||= _remote_specification.required_rubygems_version || Gem::Requirement.default
-    end
-
     def full_name
-      if platform == Gem::Platform::RUBY || platform.nil?
+      @full_name ||= if @platform == Gem::Platform::RUBY
         "#{@name}-#{@version}"
       else
-        "#{@name}-#{@version}-#{platform}"
+        "#{@name}-#{@version}-#{@platform}"
       end
     end
 
@@ -93,6 +93,10 @@ module Bundler
       end
     end
 
+    def runtime_dependencies
+      dependencies.select(&:runtime?)
+    end
+
     def git_version
       return unless loaded_from && source.is_a?(Bundler::Source::Git)
       " #{source.revision[0..6]}"
@@ -105,9 +109,9 @@ module Bundler
     end
 
     def _remote_specification
-      @_remote_specification ||= @spec_fetcher.fetch_spec([@name, @version, @platform])
+      @_remote_specification ||= @spec_fetcher.fetch_spec([@name, @version, @original_platform])
       @_remote_specification || raise(GemspecError, "Gemspec data for #{full_name} was" \
-        " missing from the server! Try installing with `--full-index` as a workaround.")
+        " missing from the server!")
     end
 
     def method_missing(method, *args, &blk)

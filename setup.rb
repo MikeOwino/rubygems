@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 #--
 # Copyright 2006, 2007 by Chad Fowler, Rich Kilmer, Jim Weirich, Eric Hodel
 # and others.
@@ -6,28 +7,30 @@
 # See LICENSE.txt for permissions.
 #++
 
-# Make sure rubygems isn't already loaded.
-if ENV['RUBYOPT'] or defined? Gem
-  ENV.delete 'RUBYOPT'
+abort "RubyGems only supports Ruby 3.1 or higher" if RUBY_VERSION < "3.1.0"
 
-  require 'rbconfig'
-  cmd = [RbConfig.ruby, '--disable-gems', 'setup.rb', *ARGV]
+# Make sure rubygems isn't already loaded.
+if ENV["RUBYOPT"] || defined? Gem
+  ENV.delete "RUBYOPT"
+
+  require "rbconfig"
+  cmd = [RbConfig.ruby, "--disable-gems", "setup.rb", *ARGV]
 
   exec(*cmd)
 end
 
-Dir.chdir File.dirname(__FILE__)
+Dir.chdir __dir__
 
-$:.unshift File.expand_path('lib')
-require 'rubygems'
-require 'rubygems/gem_runner'
+$:.unshift File.expand_path("lib")
+require "rubygems"
+require "rubygems/gem_runner"
 
 Gem::CommandManager.instance.register_command :setup
 
 args = ARGV.clone
 if ENV["GEM_PREV_VER"]
-  args = [ '--previous-version', ENV["GEM_PREV_VER"] ] + args
+  args = ["--previous-version", ENV["GEM_PREV_VER"]] + args
 end
-args.unshift 'setup'
+args.unshift "setup"
 
 Gem::GemRunner.new.run args

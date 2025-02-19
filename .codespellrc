@@ -1,0 +1,5 @@
+[codespell]
+check-filenames=
+check-hidden=
+ignore-words=.codespellignore
+skip=CODE_OF_CONDUCT.md,*.pem,.git,./bundler/tmp,./bundler/lib/bundler/templates/newgem/CODE_OF_CONDUCT.md.tt,man,vcr_cassettes,vendor
